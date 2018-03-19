@@ -4,20 +4,14 @@ import urllib, urllib2, cookielib
 from getpass import getpass
 from random import randint
 from PIL import Image
+import MySQLdb
 import hashlib
+import random
 import json
 import time
 import ssl
+import sys
 import re
-
-domain = 'https://mooc1-2.chaoxing.com'
-headers = {
-'User-Agent':'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0',
-'Referer':'http%3A%2F%2Fi.mooc.chaoxing.com',
-}
-ssl._create_default_https_context = ssl._create_unverified_context
-cookiejar = cookielib.CookieJar()
-urlOpener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))# container save cookie
 
 def greeting():
 
@@ -33,6 +27,65 @@ def greeting():
     print 'The password is invisible !'
     print '----------' * 5
     print '\n'
+
+def global_var():
+
+    global domain, headers, urlOpener, notindb
+    notindb = []
+    domain = 'https://mooc1-2.chaoxing.com'
+    headers = {
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0',
+    'Referer':'http%3A%2F%2Fi.mooc.chaoxing.com',
+    }
+    ssl._create_default_https_context = ssl._create_unverified_context
+    cookiejar = cookielib.CookieJar()
+    urlOpener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))# container save cookie
+
+def connect():
+
+    global db, cursor
+    dbhost = 'localhost'
+    dbuser = 'root'
+    dbname = 'mydb'
+    dbpass = '≈ßß&å††åç˚@log#995$'
+    db = MySQLdb.connect(dbhost, dbuser, dbpass, dbname)
+    cursor = db.cursor()
+
+def creat_table():
+
+    sql = """
+    CREATE TABLE IF NOT EXISTS Q_A_T(
+    question_id INT UNSIGNED AUTO_INCREMENT,
+    question_content TEXT(300),
+    question_type INT(2),
+    right_answer CHAR(5),
+    PRIMARY KEY (question_id)
+    )CHARACTER SET utf8 COLLATE utf8_general_ci
+    """
+    cursor.execute(sql)
+
+def insert_info(key):
+
+    qc, qt, ra = key
+    sql = "INSERT INTO Q_A_T (question_content, question_type, right_answer) VALUES ('%s', '%d', '%s')" % (qc, qt, ra)
+    cursor.execute(sql)
+    db.commit()
+
+def query_right_answer(question):
+
+    sql = "SELECT right_answer FROM Q_A_T WHERE question_content LIKE '%s'" % (question)
+    cursor.execute(sql)
+    try:
+        answer = cursor.fetchone()[0]
+    except Exception as e:
+        if '【单选题】' in question:
+            c = ['A', 'B', 'C', 'D']
+            answer = random.choice(c)
+        elif '【判断题】' in question:
+            c = ['true', 'false']
+            answer = random.choice(c)
+        notindb.append(question)
+    return answer
 
 def login():
 
@@ -105,58 +158,129 @@ def get_chapter(course_url):
 def get_video_question(chapter_detail):
 
     #knowledgeid is same as chapterId
-    #video detail in the page when num=0 or num=1
-    #question detail in the next page
     #for detail in chapter_detail:
-    clazzid, courseid, knowledgeid = chapter_detail[1]
-    for num in range(2):
-        video_url = domain + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num)
-        video_request = urllib2.Request(video_url, headers=headers)
-        video_response = urlOpener.open(video_request).read()
-        soup = BS(video_response, 'html.parser')
-        if len(soup.title.get_text()) == 2:
-            #callback = cheat(video_response)
-            #if callback == 'success':
-                #break
-            scrapy_question(clazzid, courseid, knowledgeid, num)
-            break
-        time.sleep(2)
-    delay = randint(3,5)
-    time.sleep(delay)#warning: the server will detect the interval time
-    print '---------' * 5
-    print 'The server will detect the interval time!\nFor security!\nPlease wait %s seconds!' % delay
-    print '---------' * 5
+    total = len(chapter_detail)#47 per time
+    for i in range(total):
+        print i
+        clazzid, courseid, knowledgeid = chapter_detail[i]
+        for num in range(2):
+            video_url = domain + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num)
+            video_request = urllib2.Request(video_url, headers=headers)
+            video_response = urlOpener.open(video_request).read()
+            soup = BS(video_response, 'html.parser')
+            if len(soup.title.get_text()) == 2:
+                callback = watchvideo(video_response)
+                if callback == 'success':
+                    break
+                redirect(clazzid, courseid, knowledgeid, num)
+                break
+            time.sleep(5)
+        delay = randint(30,35)
+        print '---------' * 5
+        print 'The server will detect the interval time!\nFor security!\nPlease wait %s seconds!' % delay
+        time.sleep(delay)
+        print '---------' * 5
+        print '\n'
 
-def scrapy_question(clazzid, courseid, knowledgeid, num):
+def redirect(clazzid, courseid, knowledgeid, num):
 
     question_url = domain + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num+1)
     request = urllib2.Request(question_url, headers=headers)
     response = urlOpener.open(request).read()
     info_json = match_info(response)
-    workId = info_json['attachments'][0]['property']['workid']
     jobid = info_json['attachments'][0]['property']['jobid']
-    courseId = info_json['defaults']['courseid']
-    userid = info_json['defaults']['userid']
-    classId = info_json['defaults']['clazzId']
+    workId = jobid.replace('work-', '')
     knowledgeid = info_json['defaults']['knowledgeid']
+    clazzId = info_json['defaults']['clazzId']
     enc = info_json['attachments'][0]['enc']
-    q_url = domain+'/workHandle/handle?workId=%s&courseid=%s&knowledgeid=%s&userid=%s&ut=s&classId=%s&jobid=%s&type=&isphone=false&submit=false&enc=%s&utenc=9cb1efcfb2c60e398c133b5bc067a9af' % (workId, courseId, knowledgeid, userid, classId, jobid, enc)
-    q_req = urllib2.Request(q_url, headers=headers)
-    q_rep = urlOpener.open(q_req).read()
-    action_p = r'addStudentWorkNewWeb+.+_classId=\d{7}&courseid=\d{9}&token=\w{32}&totalQuestionNum=\w{32}'
-    actions = re.findall(action_p, q_rep)
+    courseid = info_json['defaults']['courseid']
+    utenc = 'fe1733183354a56a6a4a1fca2cb6785d'
+    question_url = """
+    https://mooc1-2.chaoxing.com/api/work?api=1&workId=%s&jobid=%s&needRedirect=true&knowledgeid=%s&ut=s&clazzId=%s&type=&enc=%s&utenc=%s&courseid=%s
+    """ % (workId, jobid, knowledgeid, clazzId, enc, utenc, courseid)
+    question_req = urllib2.Request(question_url, headers=headers)
+    question_rsp = urlOpener.open(question_req).read()
+    action_pattern = r'addStudentWorkNewWeb+.+_classId=\d{7}&courseid=\d{9}&token=\w{32}&totalQuestionNum=\w{32}'
+    actions = re.findall(action_pattern, question_rsp)
     if actions:
-        form_action = domain + '/' + actions[0]
+        form_action = domain + '/work/' + actions[0]
+        do_homework(question_rsp, question_url, form_action)
+    else:
+        scrapy_question_answer(question_rsp)
 
-    soup = BS(q_rep, 'html.parser')
-    for inp in soup.find_all('input'):
-        if inp['type'] == 'radio':
-            print inp['name'], inp['value']
-    for link in soup.find_all('a'):
-        print link.get_text()
+def scrapy_question_answer(question_rsp):
+
+    keys = []
+    soup = BS(question_rsp, 'html.parser')
     for div in soup.find_all('div'):
-        if div.has_attr('style') and not div.has_attr('id'):
-            print div.get_text()
+        if div.has_attr('style') and not div.has_attr('class'):
+            question = div.get_text().encode('utf-8').strip()
+            if question != '':
+                if '【单选题】' in question:
+                    keys.append([question, 0])
+                elif '【判断题】' in question:
+                    keys.append([question, 3])
+                print question
+    k = 0
+    for span in soup.find_all('span'):
+        answer = span.get_text().encode('utf-8').strip()
+        if '我的答案：' in answer:
+            my_answer = answer.replace('我的答案：', '').replace('√', 'true').replace('×', 'false')
+            keys[k].append(my_answer)
+            k += 1
+        print answer
+    for a in soup.find_all('a'):
+        print a.previous_sibling.get_text(), a.get_text()
+    #for key in keys:
+        #insert_info(key)
+
+def do_homework(question_rsp, question_url, form_action):
+
+    answerid_pattern = r'answer\d{6,8}'
+    rough_answerid = re.findall(answerid_pattern, question_rsp)
+    answerid = []
+    answerwqbid = ''
+    for anid in rough_answerid:
+        if anid not in answerid:
+            answerwqbid += '%s,' % anid.replace('answer', '')
+            answerid.append(anid)
+    soup = BS(question_rsp, 'html.parser')
+    answers = []
+    for div in soup.find_all('div', 'clearfix'):
+        if div.has_attr('style') and div.has_attr('class'):
+            question = div.get_text().encode('utf-8').strip()
+            right_answer = query_right_answer(question)
+            answers.append(right_answer)
+            print question
+    params = {}
+    for ipt in soup.find_all('input'):
+        param_name = ipt['name']
+        try:
+            value = ipt['value']
+            if value and not value in 'ABCDtruefalse':
+                params[param_name] = value
+        except Exception as e:
+            value = ''
+            if param_name == 'answerwqbid':
+                value = answerwqbid
+            params[param_name] = value
+    for index, aid in enumerate(answerid):
+        answer = answers[index]
+        answer_id = aid
+        params[answer_id] = answer
+    handin_homework(form_action, question_url, params)
+    print json.dumps(params, sort_keys = False, indent = 4, separators = (',' , ':'))
+
+def handin_homework(form_action, question_url, params):
+
+    form = urllib.urlencode(params)
+    fuck_headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0',
+    'Referer': question_url,
+    }
+    form_action = form_action + '&version=1&ua=pc&formType=post&saveStatus=1&pos=&value='
+    req = urllib2.Request(form_action, data=form, headers=fuck_headers)
+    rsp = urlOpener.open(req).read()
 
 def match_info(response):
 
@@ -166,7 +290,7 @@ def match_info(response):
     #print json.dumps(json.loads(batch), sort_keys=True, indent=4, separators=(',', ':'))
     #for debug and find the important info I make the info_json more pretty
 
-def cheat(video_response):
+def watchvideo(video_response):
 
     info_json = match_info(video_response)
     otherInfo = info_json['attachments'][0]['otherInfo']
@@ -208,10 +332,10 @@ def report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, durati
     request = urllib2.Request(play_report_url, headers=headers)
     response = urlOpener.open(request).read()
     if 'true' in response:
-        print '^_^ Chapter %s is passed! ^_^\n' % otherInfo
+        print '^_^ Chapter %s is passed! ^_^' % otherInfo
         return 'success'
     else:
-        print '>_< Sorry the robot is tired! >_<\n'
+        print '>_< Sorry the robot is tired! >_<'
         return 'fail'
 
 def logout():
@@ -220,14 +344,23 @@ def logout():
     out_req = urllib2.Request(out_url, headers=headers)
     out_rep = urlOpener.open(out_url).read()
 
+def print_notindb():
+
+    for n in notindb:
+        print "'%s': ''," % (n)
+
 def engine():
 
     greeting()
+    global_var()
+    connect()
+    #creat_table()
     login()
     course_url = get_mycourse()
     chapter_detail = get_chapter(course_url)
     get_video_question(chapter_detail)
     logout()
+    #print_notindb()
 
 if __name__ == '__main__':
 
