@@ -44,10 +44,10 @@ def global_var():
 def connect():
 
     global db, cursor
-    dbhost = 'localhost'
-    dbuser = 'root'
-    dbname = 'mydb'
-    dbpass = '≈ßß&å††åç˚@log#995$'
+    dbhost = ''
+    dbuser = ''
+    dbname = ''
+    dbpass = ''
     db = MySQLdb.connect(dbhost, dbuser, dbpass, dbname)
     cursor = db.cursor()
 
