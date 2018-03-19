@@ -1,22 +1,15 @@
-# python_code
-超星慕课刷视频
-可以在几分之内完成所有视频的‘观看’
-并拿到90分 
+<h1>chaoxing-mooc</h1>
 
-运行环境：
-mac python2.7 
-
-所需库：
-1.PIL 
-安装方法：pip install Pillow 
-2.bs4(BeautifulSoup)
-安装方法: pip install bs4 
-
-运行： 
-下载 moc.py后
-cd 到该文件目录
-python moc.py
-输入你的超星账号密码
-稍作等待即可完成所有视频
-
-
+<h2>env: mac python2.7</h2>
+<h2>
+<ol>
+  <div>
+    <li>PIL</li><label>pip install Pillow</label>
+  </div>
+  <div>
+    <li>BS4</li><label>pip install bs4</label>
+  </div>
+</ol> 
+<p>auto watch video</p>
+</h2>March 12 2018 update</h2>
+<p>Add auto do homework</p>
