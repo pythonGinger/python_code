@@ -13,4 +13,6 @@
 <p>auto watch video</p>
 </h3>March 12 2018 update</h3>
 <p>Add auto do homework</p>
-
+<p>文件question_and_answer.json是超星慕课问题及其答案</p>
+<p>moc.py会load这个文件并query正确答案</p>
+<p>下载moc.py和question_and_answer.json到本地运行</p>
