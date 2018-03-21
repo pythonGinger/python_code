@@ -1,3 +1,4 @@
+#!/usr/bin/env python2.7
 #-*-coding:utf-8-*-
 from bs4 import BeautifulSoup as BS
 import urllib, urllib2, cookielib
