@@ -2,147 +2,82 @@
 from bs4 import BeautifulSoup as BS
 import urllib, urllib2, cookielib
 from getpass import getpass
-from random import randint
 from PIL import Image
-import MySQLdb
 import hashlib
 import random
 import json
 import time
 import ssl
-import sys
 import re
+import os
 
-def greeting():
-
-    print '\n'
-    print '----------' * 5
-    print 'Welcome! I am Mr.robot !'
-    print 'Warning !!!'
-    print 'I wrote the tool just for fun !'
-    print 'Prohibition for commercial use !'
-    print 'If you catch any question!'
-    print 'Please contact Mr.robot!'
-    print 'For security !'
-    print 'The password is invisible !'
-    print '----------' * 5
-    print '\n'
-
-def global_var():
-
-    global domain, headers, urlOpener, notindb
-    notindb = []
-    domain = 'https://mooc1-2.chaoxing.com'
-    headers = {
-    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0',
-    'Referer':'http%3A%2F%2Fi.mooc.chaoxing.com',
-    }
-    ssl._create_default_https_context = ssl._create_unverified_context
-    cookiejar = cookielib.CookieJar()
-    urlOpener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))# container save cookie
-
-def connect():
-
-    global db, cursor
-    dbhost = ''
-    dbuser = ''
-    dbname = ''
-    dbpass = ''
-    db = MySQLdb.connect(dbhost, dbuser, dbpass, dbname)
-    cursor = db.cursor()
-
-def creat_table():
-
-    sql = """
-    CREATE TABLE IF NOT EXISTS Q_A_T(
-    question_id INT UNSIGNED AUTO_INCREMENT,
-    question_content TEXT(300),
-    question_type INT(2),
-    right_answer CHAR(5),
-    PRIMARY KEY (question_id)
-    )CHARACTER SET utf8 COLLATE utf8_general_ci
-    """
-    cursor.execute(sql)
-
-def insert_info(key):
-
-    qc, qt, ra = key
-    sql = "INSERT INTO Q_A_T (question_content, question_type, right_answer) VALUES ('%s', '%d', '%s')" % (qc, qt, ra)
-    cursor.execute(sql)
-    db.commit()
-
-def query_right_answer(question):
-
-    sql = "SELECT right_answer FROM Q_A_T WHERE question_content LIKE '%s'" % (question)
-    cursor.execute(sql)
-    try:
-        answer = cursor.fetchone()[0]
-    except Exception as e:
-        if '【单选题】' in question:
-            c = ['A', 'B', 'C', 'D']
-            answer = random.choice(c)
-        elif '【判断题】' in question:
-            c = ['true', 'false']
-            answer = random.choice(c)
-        notindb.append(question)
-    return answer
+DOMAIN = 'https://mooc1-2.chaoxing.com'
+REFERER = 'http://i.mooc.chaoxing.com'
+CAPTCHA_URL = 'http://passport2.chaoxing.com/num/code'
+LOGIN_URL = 'http://passport2.chaoxing.com/login?refer=http://i.mooc.chaoxing.com'
+HEADERS = {}
+HEADERS['Referer'] = DOMAIN
+HEADERS['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0'
+ssl._create_default_https_context = ssl._create_unverified_context#deal with the SSL error
+cookiejar = cookielib.CookieJar()
+URLOPENER = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))#a container save cookie
+with open ("./question_and_answer.json", "r") as f:
+    QUESTION_ANSWER = json.load(f)
 
 def login():
 
     while True:
-        login_url = 'http://passport2.chaoxing.com/login?refer=http://i.mooc.chaoxing.com'
-        vcode_url = 'http://passport2.chaoxing.com/num/code'
-        req = urllib2.Request(login_url, headers=headers)
-        res = urlOpener.open(req)
-        img_content = urlOpener.open(vcode_url).read()
-        print '----------' * 5
-        u = raw_input('Username: ')
-        p = getpass('Password: ')
-        with open ('vcode.jpeg', 'wb') as f:
-            f.write(img_content)
-        Image.open('vcode.jpeg').show()
-        vcode = raw_input('Vcode: ')
-        form = {
-        'uname':u,
-    	'password': p,
-    	'numcode':vcode,
-        'isCheckNumCode':1,
-        'refer_0x001':'http%3A%2F%2Fi.mooc.chaoxing.com',
-        'fidName':'上海市大学生安全教育在线',
-        'productid':None,# unnecessary parameter
-    	'pidName':None,  # unnecessary parameter
-        'verCode':None,  # unnecessary parameter
-        'allowJoin':0,   # unnecessary parameter
-    	'fid':'21383',
-        'pid':-1,
-    	'f':0,
-        }
-        data = urllib.urlencode(form) #encode form parameters
-        req1 = urllib2.Request(login_url, headers=headers, data=data)
-        html = urlOpener.open(req1).read() # login then get the passport
-        if 'settings/info' in html:
+
+        HEADERS['Referer'] = REFERER
+        req = urllib2.Request(LOGIN_URL, headers=HEADERS)
+        rsp = URLOPENER.open(req)
+        captcha_content = URLOPENER.open(CAPTCHA_URL).read()
+        with open ('temp/num_capcha.jpeg', 'wb') as f:
+            f.write(captcha_content)
+        captcha_img = Image.open('temp/num_capcha.jpeg')
+        captcha_img.show()
+        username = raw_input('Username: ')
+        password = getpass('Password: ')
+        captcha = raw_input('Captcha: ')
+        login_form = {}
+        login_form['fid'] = '21383'
+        login_form['uname'] = username
+        login_form['password'] = password
+        login_form['numcode'] = captcha
+        HEADERS['Referer'] = LOGIN_URL
+        data = urllib.urlencode(login_form)#encode parameters
+        post_form = urllib2.Request(LOGIN_URL, headers=HEADERS, data=data)
+        post_rsp = URLOPENER.open(post_form).read()
+        if 'settings/info' in post_rsp:
+            mark_right_captcha(captcha_img, captcha, 'numcode')
             print 'Login successfully !'
-            print '----------' * 5
             break
         else:
             print 'Please check your username, password and vcode !\nMake sure you enter them right !'
 
-def get_mycourse():
+def setup_savepath():
 
-    mycourse_page = 'http://mooc1-2.chaoxing.com/visit/courses' # the page contain courses' info
-    mycourse_request = urllib2.Request(mycourse_page, headers=headers)
-    mycourse_response = urlOpener.open(mycourse_request).read()
-    mycourse_pat = r'/mycourse/studentcourse+.+courseId=\d{9}&clazzid=\d{7}&enc=\w{32}' # the specific num can be changed
-    mycourse = re.findall(mycourse_pat, mycourse_response)[0] # at present I have only one course
-    course_url = domain + mycourse
+    dirs = ['alpha_captcha', 'num_capcha', 'temp']
+    for d in dirs:
+        if not os.path.exists(d):
+            os.makedirs(d)
+
+def get_mycourse_url():
+
+    mycourse_page = 'http://mooc1-2.chaoxing.com/visit/courses'# Get course info
+    mycourse_request = urllib2.Request(mycourse_page, headers=HEADERS)
+    mycourse_response = URLOPENER.open(mycourse_request).read()
+    mycourse_pattern = r'/mycourse/studentcourse+.+courseId=\d{9}&clazzid=\d{7}&enc=\w{32}' # Get courseId, clazzId, enc
+    mycourse = re.findall(mycourse_pattern, mycourse_response)[0] # at present I have only one course
+    course_url = DOMAIN + mycourse
     return course_url
 
-def get_chapter(course_url):
+def get_chapter_url(course_url):
 
-    course_request = urllib2.Request(course_url, headers=headers) # the page contain the chapter info
-    course_response = urlOpener.open(course_request).read()
+    course_request = urllib2.Request(course_url, headers=HEADERS) # the page contain the chapter info
+    course_response = URLOPENER.open(course_request).read()
     soup = BS(course_response, 'html.parser')
-    chapter_detail = []
+    chapter_detail = [] # detail: clazzId, courseid, chapterid
     for link in soup.find_all('a'):
         href = link.get('href')
         if len(href) == 114:
@@ -151,62 +86,67 @@ def get_chapter(course_url):
             chapterid = href[33:42]
             #enc = href[82:]
             chapter_detail.append((clazzid, courseid, chapterid))
-            #print(clazzid, courseid, chapterid)
+            #print(clazzid, courseid, chapterid, enc)
     return chapter_detail
     #There are many noise in the page for the reason why I choose BeautifulSoup instead of re to match the href
 
-def get_video_question(chapter_detail):
+def watch_video_and_do_homework(chapter_detail):
 
-    #knowledgeid is same as chapterId
-    #for detail in chapter_detail:
-    total = len(chapter_detail)#47 per time
-    for i in range(total):
-        print i
+    start = 0
+    total = len(chapter_detail)
+    end = total#30 times per login
+    validate_flag = 'off'
+    for i in range(start, end):
+        print 'chapter id: %d' % i
         clazzid, courseid, knowledgeid = chapter_detail[i]
         for num in range(2):
-            video_url = domain + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num)
-            video_request = urllib2.Request(video_url, headers=headers)
-            video_response = urlOpener.open(video_request).read()
+            video_url = DOMAIN + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num)
+            video_request = urllib2.Request(video_url, headers=HEADERS)
+            video_response = URLOPENER.open(video_request).read()
             soup = BS(video_response, 'html.parser')
             if len(soup.title.get_text()) == 2:
-                callback = watchvideo(video_response)
-                if callback == 'success':
-                    break
-                redirect(clazzid, courseid, knowledgeid, num)
+                watch_video(video_response)
+                feedback = redirect(clazzid, courseid, knowledgeid, num, validate_flag)
+                if feedback == 'on':
+                    validate_flag = 'on'
+                time.sleep(5)
                 break
-            time.sleep(5)
-        delay = randint(30,35)
-        print '---------' * 5
-        print 'The server will detect the interval time!\nFor security!\nPlease wait %s seconds!' % delay
-        time.sleep(delay)
-        print '---------' * 5
-        print '\n'
 
-def redirect(clazzid, courseid, knowledgeid, num):
+def redirect(clazzid, courseid, knowledgeid, num, validate_flag):
 
-    question_url = domain + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num+1)
-    request = urllib2.Request(question_url, headers=headers)
-    response = urlOpener.open(request).read()
+    question_url = DOMAIN + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num+1)
+    request = urllib2.Request(question_url, headers=HEADERS)
+    response = URLOPENER.open(request).read()
     info_json = match_info(response)
     jobid = info_json['attachments'][0]['property']['jobid']
-    workId = jobid.replace('work-', '')
     knowledgeid = info_json['defaults']['knowledgeid']
     clazzId = info_json['defaults']['clazzId']
     enc = info_json['attachments'][0]['enc']
     courseid = info_json['defaults']['courseid']
     utenc = 'fe1733183354a56a6a4a1fca2cb6785d'
+    workId = jobid.replace('work-', '')
     question_url = """
     https://mooc1-2.chaoxing.com/api/work?api=1&workId=%s&jobid=%s&needRedirect=true&knowledgeid=%s&ut=s&clazzId=%s&type=&enc=%s&utenc=%s&courseid=%s
     """ % (workId, jobid, knowledgeid, clazzId, enc, utenc, courseid)
-    question_req = urllib2.Request(question_url, headers=headers)
-    question_rsp = urlOpener.open(question_req).read()
+    question_req = urllib2.Request(question_url, headers=HEADERS)
+    question_rsp = URLOPENER.open(question_req).read()
     action_pattern = r'addStudentWorkNewWeb+.+_classId=\d{7}&courseid=\d{9}&token=\w{32}&totalQuestionNum=\w{32}'
     actions = re.findall(action_pattern, question_rsp)
     if actions:
-        form_action = domain + '/work/' + actions[0]
-        do_homework(question_rsp, question_url, form_action)
+        form_action = DOMAIN + '/work/' + actions[0]
+        do_homework(question_rsp, question_url, form_action, validate_flag)
+        return 'on'
     else:
         scrapy_question_answer(question_rsp)
+        return 'off'
+
+def match_info(response):
+
+    pattern = r'{"attachments"+.+"control":true}'
+    batch = re.findall(pattern, response)[0]
+    return json.loads(batch)
+    #print json.dumps(json.loads(batch), sort_keys=True, indent=4, separators=(',', ':'))
+    #for debug and find the important info I make the info_json more pretty
 
 def scrapy_question_answer(question_rsp):
 
@@ -231,66 +171,94 @@ def scrapy_question_answer(question_rsp):
         print answer
     for a in soup.find_all('a'):
         print a.previous_sibling.get_text(), a.get_text()
-    #for key in keys:
-        #insert_info(key)
 
-def do_homework(question_rsp, question_url, form_action):
+def query_right_answer(question):
 
-    answerid_pattern = r'answer\d{6,8}'
-    rough_answerid = re.findall(answerid_pattern, question_rsp)
+    question_key = question.decode("utf-8")
+    answer = QUESTION_ANSWER.get(question_key)
+    if answer == None:
+        if "单选题" in question:
+            choices = ["A", "B", "C", "D"]
+            answer = random.choice(choices)
+        elif "判断题" in question:
+            choices = ["true", "false"]
+            answer = random.choice(choices)
+    return answer
+
+def do_homework(question_rsp, question_url, form_action, validate_flag):
+
+    answers = []
     answerid = []
     answerwqbid = ''
-    for anid in rough_answerid:
-        if anid not in answerid:
-            answerwqbid += '%s,' % anid.replace('answer', '')
-            answerid.append(anid)
+    answerid_pattern = r'answertype\d{6,8}'
+    rough_answerid = re.findall(answerid_pattern, question_rsp)
+    for aid in rough_answerid:
+        if aid.replace('type', '') not in answerid:
+            answerwqbid += '%s,' % aid.replace('answertype', '')
+            answerid.append(aid.replace('type', ''))
     soup = BS(question_rsp, 'html.parser')
-    answers = []
     for div in soup.find_all('div', 'clearfix'):
         if div.has_attr('style') and div.has_attr('class'):
             question = div.get_text().encode('utf-8').strip()
             right_answer = query_right_answer(question)
             answers.append(right_answer)
-            print question
+            print question, right_answer
     params = {}
     for ipt in soup.find_all('input'):
         param_name = ipt['name']
         try:
             value = ipt['value']
-            if value and not value in 'ABCDtruefalse':
+            if value not in 'ABCDtruefalse':
                 params[param_name] = value
         except Exception as e:
-            value = ''
-            if param_name == 'answerwqbid':
+            value = ""
+            if param_name == "answerwqbid":
                 value = answerwqbid
             params[param_name] = value
-    for index, aid in enumerate(answerid):
+    for index, anid in enumerate(answerid):
         answer = answers[index]
-        answer_id = aid
+        answer_id = anid
         params[answer_id] = answer
-    handin_homework(form_action, question_url, params)
-    print json.dumps(params, sort_keys = False, indent = 4, separators = (',' , ':'))
+    fuck_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0", "Referer": question_url}
+    if validate_flag == 'on':
+        params = validate_before_handin(question_url, fuck_headers, params)
+    handin_homework(form_action, fuck_headers, params)
+    print json.dumps(params, sort_keys=False, indent=4, separators=(',', ':'))
 
-def handin_homework(form_action, question_url, params):
+def validate_before_handin(question_url, fuck_headers, params):
+
+    while True:
+        captcha_url = 'https://mooc1-2.chaoxing.com/img/code'
+        validate_url = 'https://mooc1-2.chaoxing.com/img/ajaxValidate2'
+        req = urllib2.Request(captcha_url, headers=fuck_headers)
+        captcha_img_content = URLOPENER.open(req).read()
+        with open ('temp/alphacode.jpeg', 'wb') as f:
+            f.write(captcha_img_content)
+        captcha_img = Image.open('temp/alphacode.jpeg')
+        captcha_img.show()
+        captcha = raw_input('Captcha: ')
+        captcha_validate_form = {}
+        captcha_validate_form['code'] = captcha
+        data = urllib.urlencode(captcha_validate_form)
+        captcha_validate = urllib2.Request(validate_url, headers=fuck_headers, data=data)
+        validate_rsp = URLOPENER.open(captcha_validate).read()
+        try:
+            enc = json.loads(validate_rsp)['enc']
+            if enc:
+                params['enc'] = enc
+                mark_right_captcha(captcha_img, captcha, "alphacode")
+                return params
+        except Exception as e:
+            print 'Wrong captcha !'
+
+def handin_homework(form_action, headers, params):
 
     form = urllib.urlencode(params)
-    fuck_headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0',
-    'Referer': question_url,
-    }
     form_action = form_action + '&version=1&ua=pc&formType=post&saveStatus=1&pos=&value='
-    req = urllib2.Request(form_action, data=form, headers=fuck_headers)
-    rsp = urlOpener.open(req).read()
+    req = urllib2.Request(form_action, data=form, headers=headers)
+    rsp = URLOPENER.open(req).read()
 
-def match_info(response):
-
-    pattern = r'{"attachments"+.+"control":true}'
-    batch = re.findall(pattern, response)[0]
-    return json.loads(batch)
-    #print json.dumps(json.loads(batch), sort_keys=True, indent=4, separators=(',', ':'))
-    #for debug and find the important info I make the info_json more pretty
-
-def watchvideo(video_response):
+def watch_video(video_response):
 
     info_json = match_info(video_response)
     otherInfo = info_json['attachments'][0]['otherInfo']
@@ -299,29 +267,28 @@ def watchvideo(video_response):
     userid = info_json['defaults']['userid']
     clazzId = info_json['defaults']['clazzId']
     duration, dtoken = get_duration_dtoken(objectId)
-    clipTime, playingTime, enc = crypto(clazzId, userid, jobid, objectId, duration)
-    callback = report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, duration, playingTime, enc)
-    return callback
+    clipTime, playingTime, enc = encrypt_playingTime(clazzId, userid, jobid, objectId, duration)
+    report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, duration, playingTime, enc)
 
 def get_duration_dtoken(objectId):
 
     status_url = 'https://mooc1-2.chaoxing.com/ananas/status/' + objectId
-    request = urllib2.Request(status_url, headers=headers)
-    response = urlOpener.open(request).read()
+    request = urllib2.Request(status_url, headers=HEADERS)
+    response = URLOPENER.open(request).read()
     json_rep = json.loads(response)
     duration = json_rep['duration']
     dtoken = json_rep['dtoken']
     return duration, dtoken
 
-def crypto(clazzId, userid, jobid, objectId, duration):
+def encrypt_playingTime(clazzId, userid, jobid, objectId, duration):
 
-    playingTime = int(duration) - 1
     salt = 'd_yHJ!$pdA~5'
+    playingTime = int(duration) - 1
     clipTime = '0_' + str(playingTime)
     crypto_method = "[{}][{}][{}][{}][{}][{}][{}][{}]".format(clazzId, userid, jobid, objectId, playingTime*1000, salt, duration*1000, clipTime)
-    md = hashlib.md5()
-    md.update(crypto_method.encode('utf-8'))
-    enc = md.hexdigest()
+    md5 = hashlib.md5()
+    md5.update(crypto_method.encode('utf-8'))
+    enc = md5.hexdigest()
     return clipTime, playingTime, enc
 
 def report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, duration, playingTime, enc):
@@ -329,38 +296,38 @@ def report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, durati
     play_report_url = """
     https://mooc1-2.chaoxing.com/multimedia/log/%s?otherInfo=%s&userid=%s&rt=0.9&jobid=%s&clipTime=%s&dtype=Video&objectId=%s&clazzId=%s&duration=%s&view=pc&playingTime=%s&isdrag=3&enc=%s
     """ % (dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, duration, playingTime, enc)
-    request = urllib2.Request(play_report_url, headers=headers)
-    response = urlOpener.open(request).read()
+    request = urllib2.Request(play_report_url, headers=HEADERS)
+    response = URLOPENER.open(request).read()
     if 'true' in response:
         print '^_^ Chapter %s is passed! ^_^' % otherInfo
-        return 'success'
     else:
         print '>_< Sorry the robot is tired! >_<'
-        return 'fail'
+
+def mark_right_captcha(captcha_img, right_captcha, captcha_type):
+
+    if captcha_type == 'numcode':
+        savepath = 'num_capcha'
+    elif captcha_type == 'alphacode':
+        savepath = 'alpha_captcha'
+    a_copy = captcha_img.copy()
+    right_captcha_no = len(os.listdir(savepath))+1
+    right_captcha_name = '%s/%s-%d.jpeg' % (savepath, right_captcha, right_captcha_no)
+    a_copy.save(right_captcha_name)
 
 def logout():
 
     out_url = 'https://passport2.chaoxing.com/logout.html?'
-    out_req = urllib2.Request(out_url, headers=headers)
-    out_rep = urlOpener.open(out_url).read()
-
-def print_notindb():
-
-    for n in notindb:
-        print "'%s': ''," % (n)
+    out_req = urllib2.Request(out_url, headers=HEADERS)
+    out_rep = URLOPENER.open(out_url).read()
 
 def engine():
 
-    greeting()
-    global_var()
-    connect()
-    #creat_table()
     login()
-    course_url = get_mycourse()
-    chapter_detail = get_chapter(course_url)
-    get_video_question(chapter_detail)
+    setup_savepath()
+    course_url = get_mycourse_url()
+    chapter_detail = get_chapter_url(course_url)
+    watch_video_and_do_homework(chapter_detail)
     logout()
-    #print_notindb()
 
 if __name__ == '__main__':
 
