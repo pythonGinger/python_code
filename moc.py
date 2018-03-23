@@ -1,7 +1,8 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 #-*-coding:utf-8-*-
 from bs4 import BeautifulSoup as BS
 import urllib, urllib2, cookielib
+import matplotlib.pyplot as plt
 from getpass import getpass
 from PIL import Image
 import hashlib
@@ -12,18 +13,21 @@ import ssl
 import re
 import os
 
-DOMAIN = 'https://mooc1-2.chaoxing.com'
-REFERER = 'http://i.mooc.chaoxing.com'
-CAPTCHA_URL = 'http://passport2.chaoxing.com/num/code'
-LOGIN_URL = 'http://passport2.chaoxing.com/login?refer=http://i.mooc.chaoxing.com'
-HEADERS = {}
-HEADERS['Referer'] = DOMAIN
-HEADERS['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0'
-ssl._create_default_https_context = ssl._create_unverified_context#deal with the SSL error
-cookiejar = cookielib.CookieJar()
-URLOPENER = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))#a container save cookie
-with open ("./question_and_answer.json", "r") as f:
-    QUESTION_ANSWER = json.load(f)
+def global_var():
+
+    global DOMAIN, REFERER, CAPTCHA_URL, LOGIN_URL, HEADERS, URLOPENER, QUESTION_ANSWER
+    DOMAIN = 'https://mooc1-2.chaoxing.com'
+    REFERER = 'http://i.mooc.chaoxing.com'
+    CAPTCHA_URL = 'http://passport2.chaoxing.com/num/code'
+    LOGIN_URL = 'http://passport2.chaoxing.com/login?refer=http://i.mooc.chaoxing.com'
+    HEADERS = {}
+    HEADERS['Referer'] = DOMAIN
+    HEADERS['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:46.0) Gecko/20100101 Firefox/46.0'
+    ssl._create_default_https_context = ssl._create_unverified_context#deal with the SSL error
+    cookiejar = cookielib.CookieJar()
+    URLOPENER = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))#a container save cookie
+    with open ("./question_and_answer.json", "r") as f:
+        QUESTION_ANSWER = json.load(f)
 
 def login():
 
@@ -36,9 +40,12 @@ def login():
         with open ('temp/num_capcha.jpeg', 'wb') as f:
             f.write(captcha_content)
         captcha_img = Image.open('temp/num_capcha.jpeg')
-        captcha_img.show()
         username = raw_input('Username: ')
         password = getpass('Password: ')
+        plt.figure("captcha")
+        plt.imshow(captcha_img)
+        plt.ion()
+        plt.pause(0.1)
         captcha = raw_input('Captcha: ')
         login_form = {}
         login_form['fid'] = '21383'
@@ -50,11 +57,12 @@ def login():
         post_form = urllib2.Request(LOGIN_URL, headers=HEADERS, data=data)
         post_rsp = URLOPENER.open(post_form).read()
         if 'settings/info' in post_rsp:
-            mark_right_captcha(captcha_img, captcha, 'numcode')
+            mark_right_captcha(captcha_img, captcha, "numcode")
+            plt.close("captcha")
             print 'Login successfully !'
             break
         else:
-            print 'Please check your username, password and vcode !\nMake sure you enter them right !'
+            print 'Please check your username, password and captcha !\nMake sure you enter them right !'
 
 def setup_savepath():
 
@@ -93,13 +101,10 @@ def get_chapter_url(course_url):
 
 def watch_video_and_do_homework(chapter_detail):
 
-    start = 0
-    total = len(chapter_detail)
-    end = total#30 times per login
     validate_flag = 'off'
-    for i in range(start, end):
-        print 'chapter id: %d' % i
-        clazzid, courseid, knowledgeid = chapter_detail[i]
+    for detail in chapter_detail:
+        clazzid, courseid, knowledgeid = detail
+        print "clazzId: %s, courseId: %s, knowledgeId: %s" % (clazzid, courseid, knowledgeid)
         for num in range(2):
             video_url = DOMAIN + '/knowledge/cards?clazzid=%s&courseid=%s&knowledgeid=%s&num=%d&v=20160407-1' % (clazzid, courseid, knowledgeid, num)
             video_request = urllib2.Request(video_url, headers=HEADERS)
@@ -233,30 +238,32 @@ def validate_before_handin(question_url, fuck_headers, params):
         validate_url = 'https://mooc1-2.chaoxing.com/img/ajaxValidate2'
         req = urllib2.Request(captcha_url, headers=fuck_headers)
         captcha_img_content = URLOPENER.open(req).read()
-        with open ('temp/alphacode.jpeg', 'wb') as f:
+        with open ('temp/alpha_code.jpeg', 'wb') as f:
             f.write(captcha_img_content)
-        captcha_img = Image.open('temp/alphacode.jpeg')
-        captcha_img.show()
+        captcha_img = Image.open('temp/alpha_code.jpeg')
+        plt.figure("captcha")
+        plt.imshow(captcha_img)
+        plt.ion()
+        plt.pause(0.1)
         captcha = raw_input('Captcha: ')
         captcha_validate_form = {}
         captcha_validate_form['code'] = captcha
         data = urllib.urlencode(captcha_validate_form)
         captcha_validate = urllib2.Request(validate_url, headers=fuck_headers, data=data)
         validate_rsp = URLOPENER.open(captcha_validate).read()
-        try:
-            enc = json.loads(validate_rsp)['enc']
-            if enc:
-                params['enc'] = enc
-                mark_right_captcha(captcha_img, captcha, "alphacode")
-                return params
-        except Exception as e:
+        json_rsp = json.loads(validate_rsp)
+        if json_rsp["status"] == True:
+            params["enc"] = json_rsp["enc"]
+            mark_right_captcha(captcha_img, captcha, "alphacode")
+            return params
+        else:
             print 'Wrong captcha !'
 
-def handin_homework(form_action, headers, params):
+def handin_homework(form_action, fuck_headers, params):
 
     form = urllib.urlencode(params)
     form_action = form_action + '&version=1&ua=pc&formType=post&saveStatus=1&pos=&value='
-    req = urllib2.Request(form_action, data=form, headers=headers)
+    req = urllib2.Request(form_action, data=form, headers=fuck_headers)
     rsp = URLOPENER.open(req).read()
 
 def watch_video(video_response):
@@ -268,8 +275,21 @@ def watch_video(video_response):
     userid = info_json['defaults']['userid']
     clazzId = info_json['defaults']['clazzId']
     duration, dtoken = get_duration_dtoken(objectId)
-    clipTime, playingTime, enc = encrypt_playingTime(clazzId, userid, jobid, objectId, duration)
-    report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, duration, playingTime, enc)
+    clipTime_list = []
+    clipTime_end = '0_' + str(duration)
+    clipTime_before_end = '0_' + str(duration-1)
+    clipTime_list.append(clipTime_end)
+    clipTime_list.append(clipTime_before_end)
+    interval = 60
+    process_list = []
+    process_list.append(duration-1)
+    process_list.append(duration)
+    for process in process_list:
+        for clipTime in clipTime_list:
+            enc = encrypt_playingTime(clazzId, userid, jobid, objectId, process, duration, clipTime)
+            feedback = report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, duration, process, enc)
+            if feedback == "next":
+                return
 
 def get_duration_dtoken(objectId):
 
@@ -281,16 +301,14 @@ def get_duration_dtoken(objectId):
     dtoken = json_rep['dtoken']
     return duration, dtoken
 
-def encrypt_playingTime(clazzId, userid, jobid, objectId, duration):
+def encrypt_playingTime(clazzId, userid, jobid, objectId, process, duration, clipTime):
 
     salt = 'd_yHJ!$pdA~5'
-    playingTime = int(duration) - 1
-    clipTime = '0_' + str(playingTime)
-    crypto_method = "[{}][{}][{}][{}][{}][{}][{}][{}]".format(clazzId, userid, jobid, objectId, playingTime*1000, salt, duration*1000, clipTime)
+    encrypt_method = "[{}][{}][{}][{}][{}][{}][{}][{}]".format(clazzId, userid, jobid, objectId, process*1000, salt, duration*1000, clipTime)
     md5 = hashlib.md5()
-    md5.update(crypto_method.encode('utf-8'))
+    md5.update(encrypt_method.encode('utf-8'))
     enc = md5.hexdigest()
-    return clipTime, playingTime, enc
+    return enc
 
 def report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, duration, playingTime, enc):
 
@@ -300,9 +318,11 @@ def report(dtoken, otherInfo, userid, jobid, clipTime, objectId, clazzId, durati
     request = urllib2.Request(play_report_url, headers=HEADERS)
     response = URLOPENER.open(request).read()
     if 'true' in response:
-        print '^_^ Chapter %s is passed! ^_^' % otherInfo
+        print '^_^Passed Time: %s! ^_^' % playingTime
+        return "next"
     else:
-        print '>_< Sorry the robot is tired! >_<'
+        print 'Reporting time: %s...' % playingTime
+        return "continue"
 
 def mark_right_captcha(captcha_img, right_captcha, captcha_type):
 
@@ -323,8 +343,9 @@ def logout():
 
 def engine():
 
-    login()
     setup_savepath()
+    global_var()
+    login()
     course_url = get_mycourse_url()
     chapter_detail = get_chapter_url(course_url)
     watch_video_and_do_homework(chapter_detail)
